@@ -1,21 +1,169 @@
 #include <Regexp.h> 
-#include <UIPEthernet.h>
-#include <UIPServer.h>
-#include <UIPClient.h>
+#include <UIPEthernet.h> 
 #include <stdlib.h>
-#include <string.h>
-int led = 2;
-int led1 = 9;
-int led2 = 8; 
+#include <string.h> 
+#include "DHT.h"            
+ /*ĐỘ ẩm, nhiệt độ */
+const int DHTPIN = 13;       //Đọc dữ liệu từ DHT11 ở chân 2 trên mạch Arduino
+const int DHTTYPE = DHT11;  //Khai báo loại cảm biến, có 2 loại là DHT11 và DHT22  
+DHT dht(DHTPIN, DHTTYPE);
+/*Kết thúc ĐỘ ẩm, nhiệt độ */
+/* cảm biến mưa */
+
+int israining;
+int rainSensor = 6;
+/*ket thuc cam bien mua */
+/*cam bien chuyen dong */
+
+unsigned long previousMillis = 0;  
+boolean securemode = 0;
+boolean motion_state = 0;
+int pirinput = 12;
+/*ket thuc cam bien chuyen dong */
+boolean device[55];
+int i;
+String temp;
+          // we start, assuming no motion detected
+int inputPin = 3;  
+int relay[8] = {31,33,35,37,39,41,43,45};
 byte mac[] = {0x00,0x01,0x02,0x03,0x04,0x05};   //physical mac address
-byte ip[] = { 192,168,100,69 };                      // ip in lan (that's what you need to use in your browser. ("***.***.*.***")
-byte gateway[] = { 192,168,100,1 };                   // internet access via router
+byte ip[] = { 192,168,0,177 };                      // ip in lan (that's what you need to use in your browser. ("***.***.*.***")
+byte gateway[] = { 192,168,0,1 };                   // internet access via router
 
 EthernetServer server(80);                             //server port     
 String readString;
-   /* This is code */
-   
-  void ParseRequestStr(String reqStr, String Name, boolean type)
+float h = 0;    //Đọc độ ẩm
+float t = 0; //Đọc nhiệt độ
+void updateTemp(){
+    h = dht.readHumidity();  
+    t = dht.readTemperature();
+  Serial.print("Nhiet do: ");
+  Serial.println(t);               //Xuất nhiệt độ
+  Serial.print("Do am: ");
+  Serial.println(h);               //Xuất độ ẩm
+  
+  Serial.println();  
+}
+void setup() {
+    israining = 0;
+    for(i = 0; i<8; i++){
+      pinMode(relay[i], OUTPUT);
+      digitalWrite(relay[i], HIGH);      
+ }
+ 
+   for( i = 1; i<54; i++) device[i] = 0;
+ // Open serial communications and wait for port to open:
+  Serial.begin(9600);
+ 
+ 
+  // start the Ethernet connection and the server:
+  Ethernet.begin(mac, ip );
+  server.begin();
+  Serial.print("server is at ");
+  Serial.println(Ethernet.localIP());
+  
+    updateTemp();
+} 
+
+void loop() {
+delay_time_motion();
+   for( i = 1; i<55; i++){
+        for(int j = 0; j < 8; j++){
+          if(i == relay[j]){
+            if(device[i] == 0){
+              digitalWrite(relay[j], HIGH);              
+              }else{
+               digitalWrite(relay[j], LOW); 
+                }            
+            }
+          }
+     }
+  // Create a client connection
+  EthernetClient client = server.available();
+  if (client) {
+    while (client.connected()) {   
+      if (client.available()) {
+        char c = client.read();
+     
+        //read char by char HTTP request
+        if (readString.length() < 100) {
+          //store characters to string
+          readString += c;
+          //Serial.print(c);
+         } 
+         //if HTTP request has ended
+         if (c == '\n') {         
+        //   Serial.println(readString); //print to serial monitor for debuging
+               /*
+           client.println("HTTP/1.1 200 OK"); //send new page
+           client.println("Content-Type: text/html");
+           client.println();     
+      
+           client.println("<meta name='apple-mobile-web-app-capable' content='yes' />");
+           client.println("<meta name='apple-mobile-web-app-status-bar-style' content='black-translucent' />");
+           //client.println("POST /TempGauges.php HTTP/1.1");
+          // client.println("Host: MyWebPage.com");
+           client.println("led=1");
+               */
+       
+        //   delay(1);
+           //stopping client
+         
+           //controls the Arduino if you press the buttons
+            
+       //   Serial.println (readString);
+          Serial.println (ParseRequestStr(readString, "rdw", false));
+            //clearing string for next read
+            /*for relay only*/
+            for( i = 1; i<55; i++){
+             temp = (String) i; 
+               if (readString.indexOf("?relay"+temp+"On") >0){
+                device[i]= 1;              
+             }
+              if (readString.indexOf("?relay"+temp+"Off") >0){
+                device[i]= 0;              
+             }
+           }
+             if (readString.indexOf("?securemodeOn") >0){
+                  securemode = 1;
+             }
+                if (readString.indexOf("?securemodeOff") >0){
+                  securemode = 0;
+             }
+             if (readString.indexOf("?offMotion") >0){
+                  motion_state = 0;
+             }     
+            /*for relay only*/              
+            
+            readString=""; 
+           //return state of device
+            for( i = 1; i<55; i++){ 
+              if (device[i] == 0){
+                    client.print("<relay");  client.print(i);  client.print(">off");  client.print("</relay");  client.print(i);  client.print(">");client.println("");  
+                    
+                }else{
+                    
+                    client.print("<relay");  client.print(i);  client.print(">on");  client.print("</relay");  client.print(i);  client.print(">");client.println(""); 
+                  }
+            }
+            client.print("<rainsensor>"); client.print(israining);  client.print("</rainsensor>"); client.println("");
+            client.print("<temp>"); client.print(t);  client.print("</temp>"); client.println("");
+            client.print("<humidity>"); client.print(h);  client.print("</humidity>"); client.println("");
+           
+           
+              client.stop();
+          //end return device
+         }
+       }
+    }
+}
+}
+
+
+
+
+/* This is code */
+String ParseRequestStr(String reqStr, String Name, boolean type)
 { 
   //type =1: get String
   //Type = 0: get Number
@@ -23,8 +171,7 @@ String readString;
     unsigned int index = 0;
     char bufferReqStr[reqStr.length() + 1]; //Buf for Reg Ex
     char bufferStr[reqStr.length()+1]; // Buf for char array
-    reqStr.toCharArray(bufferStr, reqStr.length() + 1); // String to Char Array
-     
+    reqStr.toCharArray(bufferStr, reqStr.length() + 1); // String to Char Array 
     //to char array
     String myWord = Name;
     char pattent[myWord.length()+1];//as 1 char space for null is also required
@@ -45,100 +192,44 @@ String readString;
       //  Serial.println (ms.GetMatch(bufferReqStr));
        // Serial.println ("Captures:");
         for (int j = 0; j < ms.level; j++)
-           Serial.println (ms.GetCapture(bufferReqStr, j));
+          return (ms.GetCapture(bufferReqStr, j));
         index = ms.MatchStart + ms.MatchLength;
       }
       else
         break;
+        
     } 
+    return "0";
 }
-   
-   
-      /* This is code */
-void setup() {
- // Open serial communications and wait for port to open:
-  Serial.begin(9600);
-   while (!Serial) {
-    ; // wait for serial port to connect. Needed for Leonardo only
-  }
-  pinMode(led, OUTPUT);
-  pinMode(led1, OUTPUT);
-  pinMode(led2, OUTPUT);
-
-  // start the Ethernet connection and the server:
-  Ethernet.begin(mac, ip );
-  server.begin();
-  Serial.print("server is at ");
-  Serial.println(Ethernet.localIP());
-} 
-void loop() {
-  // Create a client connection
-  EthernetClient client = server.available();
-  if (client) {
-    while (client.connected()) {   
-      if (client.available()) {
-        char c = client.read();
-     
-        //read char by char HTTP request
-        if (readString.length() < 100) {
-          //store characters to string
-          readString += c;
-          //Serial.print(c);
-         } 
-         //if HTTP request has ended
-         if (c == '\n') {         
-        //   Serial.println(readString); //print to serial monitor for debuging
-     /*
-           client.println("HTTP/1.1 200 OK"); //send new page
-           client.println("Content-Type: text/html");
-           client.println();     
-      
-           client.println("<meta name='apple-mobile-web-app-capable' content='yes' />");
-           client.println("<meta name='apple-mobile-web-app-status-bar-style' content='black-translucent' />");
-           //client.println("POST /TempGauges.php HTTP/1.1");
-          // client.println("Host: MyWebPage.com");
-           client.println("led=1");
-               */
-           client.println("<HTML>");
-           client.println("<HEAD>");
-           client.println("</HEAD>");
-           client.println("<BODY>");
-            client.println("<BODY>");
-           client.println("<h1>Oh shit, It 's Me</h1>");
-           client.println("</BODY>");
-           client.println("</HTML>");
  
-           delay(1);
-           //stopping client
-           client.stop();
-           //controls the Arduino if you press the buttons
-           if (readString.indexOf("?button1on") >0){
-               digitalWrite(led, HIGH);
-               Serial.println ("LED 0n");
-           }
-           if (readString.indexOf("?button1off") >0){
-               digitalWrite(led, LOW);
-           }
-           if (readString.indexOf("?button2on") >0){
-               digitalWrite(led1, HIGH);
-           }
-           if (readString.indexOf("?button2off") >0){
-              digitalWrite(led1, LOW);
-                }
-           if (readString.indexOf("?button3on") >0){
-             digitalWrite(led2, HIGH);
-           }
-           if (readString.indexOf("?button3off") >0){
-             digitalWrite(led2, LOW);
-         } 
-       //   Serial.println (readString);
-       ParseRequestStr(readString, "rdw", false);
-            //clearing string for next read
-            readString=""; 
-           
-         }
-       }
-    }
+ void delay_time_motion(){
+   unsigned long currentMillis = millis();
+  
+  if(motion()){
+     motion_state = 1;   
+     previousMillis = currentMillis;
+  }else{ 
+    int val = currentMillis - previousMillis;
+    Serial.println(val);
+     if (val >= 3000) { 
+        previousMillis = currentMillis;
+        motion_state = 0; 
+     }     
+  }
+  if(motion_state == 1){
+    device[31] = 1; 
+  }else{
+    device[31] = 0; 
+  }   
+      
+  
+      // set the LED with the ledState of the variable:
+   
+    
+   }
+ 
+      /* This is code */
+boolean motion(){  
+   int israining = digitalRead(rainSensor);  
+   return digitalRead(pirinput);    
 }
-}
-
